@@ -28,7 +28,7 @@ private:
 
     static std::vector<PMT_REF>::const_iterator FindNitRef(const std::vector<PMT_REF> &pmt);
     std::vector<PMT_REF>::const_iterator FindTargetPmtRef(const std::vector<PMT_REF> &pmt) const;
-    void AddPat(int transportStreamID, int programNumber, bool addNit);
+    void AddPat(int transportStreamID, int programNumber, bool addNit, int versionNumber);
     void AddPmt(const PSI &psi);
     void AddPcrAdaptation(const uint8_t *pcr);
     void ChangePidAndAddPacket(const uint8_t *packet, int pid, uint8_t counter = 0xff);

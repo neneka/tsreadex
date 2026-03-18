@@ -85,7 +85,7 @@ void CServiceFilter::AddPacket(const uint8_t *packet)
         auto itPmt = FindTargetPmtRef(m_pat.pmt);
         if (itPmt != m_pat.pmt.end()) {
             if (unitStart) {
-                AddPat(m_pat.transport_stream_id, itPmt->program_number, FindNitRef(m_pat.pmt) != m_pat.pmt.end());
+                AddPat(m_pat.transport_stream_id, itPmt->program_number, FindNitRef(m_pat.pmt) != m_pat.pmt.end(), m_pat.version_number);
             }
         }
         else {
@@ -290,7 +290,7 @@ std::vector<PMT_REF>::const_iterator CServiceFilter::FindTargetPmtRef(const std:
     return std::find_if(pmt.begin(), pmt.end(), [=](const PMT_REF &a) { return a.program_number == m_programNumberOrIndex; });
 }
 
-void CServiceFilter::AddPat(int transportStreamID, int programNumber, bool addNit)
+void CServiceFilter::AddPat(int transportStreamID, int programNumber, bool addNit, int versionNumber)
 {
     // Create PAT
     m_buf.assign(9, 0);
@@ -299,7 +299,7 @@ void CServiceFilter::AddPat(int transportStreamID, int programNumber, bool addNi
     m_buf[3] = addNit ? 17 : 13;
     m_buf[4] = static_cast<uint8_t>(transportStreamID >> 8);
     m_buf[5] = static_cast<uint8_t>(transportStreamID);
-    m_buf[6] = m_lastPat.size() > 6 ? m_lastPat[6] : 0xc1;
+    m_buf[6] = m_lastPat.size() > 6 ? m_lastPat[6] : (0xc1 | ((versionNumber & 0x1f) << 1));
     if (addNit) {
         m_buf.push_back(0);
         m_buf.push_back(0);

@@ -57,7 +57,6 @@ const size_t EXTRA_WORKSPACE_BYTES = 16;
 
 inline bool CheckOverrun(size_t lenBytes, size_t pos)
 {
-    assert(pos <= lenBytes * 8);
     return pos <= lenBytes * 8;
 }
 
@@ -138,8 +137,8 @@ bool SingleChannelElement(const uint8_t *aac, size_t lenBytes, size_t &pos, bool
         int sectLenIncrBits = windowSequence == EIGHT_SHORT_SEQUENCE ? 3 : 5;
         int sectEscVal = windowSequence == EIGHT_SHORT_SEQUENCE ? 7 : 31;
         int i = 0;
-        for (int k = 0; k < maxSfb; ++i) {
-            if (!CheckOverrun(lenBytes, pos)) {
+        for (int k = 0; k < maxSfb; ) {
+            if (i >= 64 || !CheckOverrun(lenBytes, pos)) {
                 return false;
             }
             sectCb[g][i] = read_bits(aac, pos, 4);
@@ -151,18 +150,20 @@ bool SingleChannelElement(const uint8_t *aac, size_t lenBytes, size_t &pos, bool
                 int sectLenIncr = read_bits(aac, pos, sectLenIncrBits);
                 sectLen += sectLenIncr;
                 if (k + sectLen > maxSfb) {
-                    assert(false);
                     return false;
                 }
                 if (sectLenIncr != sectEscVal) {
                     break;
                 }
             }
+            if (sectLen <= 0) {
+                return false;
+            }
             for (int sfb = k; sfb < k + sectLen; ++sfb) {
                 sfbCb[g][sfb] = sectCb[g][i];
             }
             k += sectLen;
-            sectEnd[g][i] = k;
+            sectEnd[g][i++] = k;
         }
         numSec[g] = i;
     }
@@ -292,7 +293,6 @@ bool SingleChannelElement(const uint8_t *aac, size_t lenBytes, size_t &pos, bool
                             int count = 0;
                             while (read_bool(aac, pos)) {
                                 if (++count > 8) {
-                                    assert(false);
                                     return false;
                                 }
                             }
@@ -302,7 +302,6 @@ bool SingleChannelElement(const uint8_t *aac, size_t lenBytes, size_t &pos, bool
                             int count = 0;
                             while (read_bool(aac, pos)) {
                                 if (++count > 8) {
-                                    assert(false);
                                     return false;
                                 }
                             }
@@ -439,7 +438,9 @@ bool SyncPayload(std::vector<uint8_t> &workspace, const uint8_t *payload, size_t
             return false;
         }
     }
-    assert(workspace[0] == 0xff);
+    if (workspace[0] != 0xff) {
+        return false;
+    }
     return true;
 }
 
@@ -475,9 +476,13 @@ void SkipPayload(std::vector<uint8_t> &workspace, size_t workspaceLenBytes)
     // Carry over the remaining payload.
     workspace.erase(workspace.begin(), workspace.begin() + i);
     if (!workspace.empty()) {
-        assert(workspace[0] == 0xff);
-        // This 0 means synchronized 0xff.
-        workspace[0] = 0;
+        if (workspace[0] != 0xff) {
+            workspace.clear();
+        }
+        else {
+            // This 0 means synchronized 0xff.
+            workspace[0] = 0;
+        }
     }
 }
 }
@@ -580,8 +585,7 @@ bool TransmuxDualMono(std::vector<uint8_t> &destLeft, std::vector<uint8_t> &dest
             }
         }
 
-        assert(pos == frameLenBytes * 8);
-        if (!CheckOverrun(frameLenBytes, pos)) {
+        if (pos != frameLenBytes * 8) {
             SkipPayload(workspace, workspaceLenBytes);
             return false;
         }
@@ -746,8 +750,7 @@ bool TransmuxMonoToStereo(std::vector<uint8_t> &dest, std::vector<uint8_t> &work
             }
         }
 
-        assert(pos == frameLenBytes * 8);
-        if (!CheckOverrun(frameLenBytes, pos)) {
+        if (pos != frameLenBytes * 8) {
             SkipPayload(workspace, workspaceLenBytes);
             return false;
         }

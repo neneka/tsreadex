@@ -913,9 +913,11 @@ bool CServiceFilter::TransmuxMonoToStereo(const std::vector<uint8_t> &unitPacket
             size_t pesPayloadPos = 9 + m_buf[8];
             if (pesPayloadPos < 6 + pesPacketLength) {
                 m_buf.resize(6 + pesPacketLength);
-                if (Aac::TransmuxMonoToStereo(m_destLeftBuf, workspace, m_buf.data() + pesPayloadPos, m_buf.size() - pesPayloadPos) &&
-                    !m_destLeftBuf.empty()) {
+                if (Aac::TransmuxMonoToStereo(m_destLeftBuf, workspace, m_buf.data() + pesPayloadPos, m_buf.size() - pesPayloadPos)) {
 
+                    if (m_destLeftBuf.empty()) {
+                        return true;
+                    }
                     // Stereo
                     m_buf.resize(pesPayloadPos);
                     m_buf.insert(m_buf.end(), m_destLeftBuf.begin(), m_destLeftBuf.end());

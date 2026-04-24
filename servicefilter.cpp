@@ -950,10 +950,14 @@ bool CServiceFilter::TransmuxDualMono(const std::vector<uint8_t> &unitPackets)
                 m_buf.resize(6 + pesPacketLength);
                 if (Aac::TransmuxDualMono(m_destLeftBuf, m_destRightBuf, m_audio1MuxDualMonoWorkspace,
                                           m_audio1MuxToStereo, m_audio2MuxToStereo,
-                                          m_buf.data() + pesPayloadPos, m_buf.size() - pesPayloadPos) &&
-                    !m_destLeftBuf.empty() &&
-                    !m_destRightBuf.empty()) {
+                                          m_buf.data() + pesPayloadPos, m_buf.size() - pesPayloadPos)) {
 
+                    if (m_destLeftBuf.empty() || m_destRightBuf.empty()) {
+                        if (m_destLeftBuf.empty() && m_destRightBuf.empty()) {
+                            return true;
+                        }
+                        return false;
+                    }
                     // Dual mono left
                     m_buf.resize(pesPayloadPos);
                     m_buf.insert(m_buf.end(), m_destLeftBuf.begin(), m_destLeftBuf.end());

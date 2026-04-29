@@ -489,14 +489,14 @@ void SkipPayload(std::vector<uint8_t> &workspace, size_t workspaceLenBytes)
 
 namespace Aac
 {
-bool TransmuxDualMono(std::vector<uint8_t> &destLeft, std::vector<uint8_t> &destRight, std::vector<uint8_t> &workspace,
+void TransmuxDualMono(std::vector<uint8_t> &destLeft, std::vector<uint8_t> &destRight, std::vector<uint8_t> &workspace, bool &isDualMono,
                       bool muxLeftToStereo, bool muxRightToStereo, const uint8_t *payload, size_t lenBytes)
 {
     destLeft.clear();
     destRight.clear();
     if (!SyncPayload(workspace, payload, lenBytes)) {
         // No ADTS frames, done.
-        return true;
+        return;
     }
     size_t workspaceLenBytes = workspace.size();
     workspace.insert(workspace.end(), EXTRA_WORKSPACE_BYTES, 0);
@@ -505,14 +505,17 @@ bool TransmuxDualMono(std::vector<uint8_t> &destLeft, std::vector<uint8_t> &dest
         if (workspace[0] != 0xff) {
             // Need to resync
             workspace.clear();
-            return false;
+            isDualMono = false;
+            return;
         }
         if (workspaceLenBytes < 7) {
             break;
         }
+
+        isDualMono = false;
         if ((workspace[1] & 0xf0) != 0xf0) {
             workspace.clear();
-            return false;
+            return;
         }
 
         // ADTS header
@@ -525,21 +528,23 @@ bool TransmuxDualMono(std::vector<uint8_t> &destLeft, std::vector<uint8_t> &dest
         // Frequencies other than 48/44.1/32kHz are not supported.
         if (samplingFrequencyIndex < 3 || samplingFrequencyIndex > 5) {
             SkipPayload(workspace, workspaceLenBytes);
-            return false;
+            return;
         }
         ++pos;
         int channelConfiguration = read_bits(aac, pos, 3);
         // ARIB STD-B32 seems to define "channel_configuration = 0 and exactly 2 SCEs" as "dual mono".
         if (channelConfiguration != 0) {
             SkipPayload(workspace, workspaceLenBytes);
-            return false;
+            return;
         }
         pos += 4;
         size_t frameLenBytes = read_bits(aac, pos, 13);
         if (frameLenBytes < 7) {
             workspace.clear();
-            return false;
+            return;
         }
+
+        isDualMono = true;
         if (workspaceLenBytes < frameLenBytes) {
             break;
         }
@@ -560,7 +565,8 @@ bool TransmuxDualMono(std::vector<uint8_t> &destLeft, std::vector<uint8_t> &dest
                 int id = RawDataBlock(aac, frameLenBytes, pos, samplingFrequencyIndex == 5);
                 if (id < 0) {
                     SkipPayload(workspace, workspaceLenBytes);
-                    return false;
+                    isDualMono = false;
+                    return;
                 }
                 if (id == ID_END) {
                     break;
@@ -568,7 +574,8 @@ bool TransmuxDualMono(std::vector<uint8_t> &destLeft, std::vector<uint8_t> &dest
                 if (id == ID_SCE) {
                     if (sceCount >= 2) {
                         SkipPayload(workspace, workspaceLenBytes);
-                        return false;
+                        isDualMono = false;
+                        return;
                     }
                     sceBegin[i][sceCount] = beginPos;
                     sceEnd[i][sceCount++] = pos;
@@ -576,7 +583,8 @@ bool TransmuxDualMono(std::vector<uint8_t> &destLeft, std::vector<uint8_t> &dest
             }
             if (sceCount != 2) {
                 SkipPayload(workspace, workspaceLenBytes);
-                return false;
+                isDualMono = false;
+                return;
             }
             ByteAlignment(pos);
             if (blocksInFrame != 0 && !protectionAbsent) {
@@ -587,7 +595,8 @@ bool TransmuxDualMono(std::vector<uint8_t> &destLeft, std::vector<uint8_t> &dest
 
         if (pos != frameLenBytes * 8) {
             SkipPayload(workspace, workspaceLenBytes);
-            return false;
+            isDualMono = false;
+            return;
         }
 
         // Append 2 ADTS
@@ -653,15 +662,14 @@ bool TransmuxDualMono(std::vector<uint8_t> &destLeft, std::vector<uint8_t> &dest
     }
 
     SkipPayload(workspace, workspaceLenBytes);
-    return true;
 }
 
-bool TransmuxMonoToStereo(std::vector<uint8_t> &dest, std::vector<uint8_t> &workspace, const uint8_t *payload, size_t lenBytes)
+void TransmuxMonoToStereo(std::vector<uint8_t> &dest, std::vector<uint8_t> &workspace, bool &isMono, const uint8_t *payload, size_t lenBytes)
 {
     dest.clear();
     if (!SyncPayload(workspace, payload, lenBytes)) {
         // No ADTS frames, done.
-        return true;
+        return;
     }
     size_t workspaceLenBytes = workspace.size();
     workspace.insert(workspace.end(), EXTRA_WORKSPACE_BYTES, 0);
@@ -670,14 +678,17 @@ bool TransmuxMonoToStereo(std::vector<uint8_t> &dest, std::vector<uint8_t> &work
         if (workspace[0] != 0xff) {
             // Need to resync
             workspace.clear();
-            return false;
+            isMono = false;
+            return;
         }
         if (workspaceLenBytes < 7) {
             break;
         }
+
+        isMono = false;
         if ((workspace[1] & 0xf0) != 0xf0) {
             workspace.clear();
-            return false;
+            return;
         }
 
         // ADTS header
@@ -690,20 +701,22 @@ bool TransmuxMonoToStereo(std::vector<uint8_t> &dest, std::vector<uint8_t> &work
         // Frequencies other than 48/44.1/32kHz are not supported.
         if (samplingFrequencyIndex < 3 || samplingFrequencyIndex > 5) {
             SkipPayload(workspace, workspaceLenBytes);
-            return false;
+            return;
         }
         ++pos;
         int channelConfiguration = read_bits(aac, pos, 3);
         if (channelConfiguration != 1) {
             SkipPayload(workspace, workspaceLenBytes);
-            return false;
+            return;
         }
         pos += 4;
         size_t frameLenBytes = read_bits(aac, pos, 13);
         if (frameLenBytes < 7) {
             workspace.clear();
-            return false;
+            return;
         }
+
+        isMono = true;
         if (workspaceLenBytes < frameLenBytes) {
             break;
         }
@@ -724,7 +737,8 @@ bool TransmuxMonoToStereo(std::vector<uint8_t> &dest, std::vector<uint8_t> &work
                 int id = RawDataBlock(aac, frameLenBytes, pos, samplingFrequencyIndex == 5);
                 if (id < 0) {
                     SkipPayload(workspace, workspaceLenBytes);
-                    return false;
+                    isMono = false;
+                    return;
                 }
                 if (id == ID_END) {
                     break;
@@ -732,7 +746,8 @@ bool TransmuxMonoToStereo(std::vector<uint8_t> &dest, std::vector<uint8_t> &work
                 if (id == ID_SCE) {
                     if (sceFound) {
                         SkipPayload(workspace, workspaceLenBytes);
-                        return false;
+                        isMono = false;
+                        return;
                     }
                     sceBegin[i] = beginPos;
                     sceEnd[i] = pos;
@@ -741,7 +756,8 @@ bool TransmuxMonoToStereo(std::vector<uint8_t> &dest, std::vector<uint8_t> &work
             }
             if (!sceFound) {
                 SkipPayload(workspace, workspaceLenBytes);
-                return false;
+                isMono = false;
+                return;
             }
             ByteAlignment(pos);
             if (blocksInFrame != 0 && !protectionAbsent) {
@@ -752,7 +768,8 @@ bool TransmuxMonoToStereo(std::vector<uint8_t> &dest, std::vector<uint8_t> &work
 
         if (pos != frameLenBytes * 8) {
             SkipPayload(workspace, workspaceLenBytes);
-            return false;
+            isMono = false;
+            return;
         }
 
         // ADTS header
@@ -811,6 +828,5 @@ bool TransmuxMonoToStereo(std::vector<uint8_t> &dest, std::vector<uint8_t> &work
     }
 
     SkipPayload(workspace, workspaceLenBytes);
-    return true;
 }
 }

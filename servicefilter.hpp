@@ -40,7 +40,7 @@ private:
     void AddCaptionManagementPesPacket(int64_t pts, uint8_t counter);
     void AddSuperimposeManagementPesPacket(uint8_t counter);
     void AddAudioPesPackets(const std::vector<uint8_t> &pes, int pid, uint8_t &counter, int64_t &ptsPcrDiff, const uint8_t *pcr);
-    bool TransmuxMonoToStereo(const std::vector<uint8_t> &unitPackets, std::vector<uint8_t> &workspace,
+    bool TransmuxMonoToStereo(const std::vector<uint8_t> &unitPackets, std::vector<uint8_t> &workspace, bool &isMono,
                               int pid, uint8_t &counter, int64_t &ptsPcrDiff);
     bool TransmuxDualMono(const std::vector<uint8_t> &unitPackets);
 
@@ -78,6 +78,9 @@ private:
     std::vector<uint8_t> m_audio1MuxWorkspace;
     std::vector<uint8_t> m_audio2MuxWorkspace;
     std::vector<uint8_t> m_audio1MuxDualMonoWorkspace;
+    bool m_isAudio1AacMono;
+    bool m_isAudio2AacMono;
+    bool m_isAudio1AacDualMono;
     int64_t m_audio1Pts;
     int64_t m_audio2Pts;
     int64_t m_audio1PtsPcrDiff;

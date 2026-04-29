@@ -29,6 +29,9 @@ CServiceFilter::CServiceFilter()
     , m_captionPesCounter(0xff)
     , m_superimposePesCounter(0xff)
     , m_isAudio1DualMono(false)
+    , m_isAudio1AacMono(false)
+    , m_isAudio2AacMono(false)
+    , m_isAudio1AacDualMono(false)
     , m_audio1Pts(-1)
     , m_audio2Pts(-1)
     , m_audio1PtsPcrDiff(0)
@@ -186,11 +189,11 @@ void CServiceFilter::AddPacket(const uint8_t *packet)
                     }
                     else {
                         passthroughAudio1 = !m_audio1MuxToStereo || m_audio1StreamType != ADTS_TRANSPORT ||
-                                            !TransmuxMonoToStereo(m_audio1UnitPackets, m_audio1MuxWorkspace, 0x0110, m_audio1PesCounter, m_audio1PtsPcrDiff);
+                                            !TransmuxMonoToStereo(m_audio1UnitPackets, m_audio1MuxWorkspace, m_isAudio1AacMono, 0x0110, m_audio1PesCounter, m_audio1PtsPcrDiff);
                         // Copy audio1 to audio2 if needed
                         copyToAudio2 = m_audio2Mode == 3 && m_audio2Pid == 0;
                         if (copyToAudio2 && m_audio2MuxToStereo && m_audio1StreamType == ADTS_TRANSPORT &&
-                            TransmuxMonoToStereo(m_audio1UnitPackets, m_audio2MuxWorkspace, 0x0111, m_audio2PesCounter, m_audio2PtsPcrDiff)) {
+                            TransmuxMonoToStereo(m_audio1UnitPackets, m_audio2MuxWorkspace, m_isAudio2AacMono, 0x0111, m_audio2PesCounter, m_audio2PtsPcrDiff)) {
                             // Already added
                             copyToAudio2 = false;
                         }
@@ -226,7 +229,7 @@ void CServiceFilter::AddPacket(const uint8_t *packet)
             else if (pid == m_audio2Pid) {
                 if (AccumulatePesPackets(m_audio2UnitPackets, packet, unitStart)) {
                     if (m_audio2MuxToStereo && m_audio2StreamType == ADTS_TRANSPORT &&
-                        TransmuxMonoToStereo(m_audio2UnitPackets, m_audio2MuxWorkspace, 0x0111, m_audio2PesCounter, m_audio2PtsPcrDiff)) {
+                        TransmuxMonoToStereo(m_audio2UnitPackets, m_audio2MuxWorkspace, m_isAudio2AacMono, 0x0111, m_audio2PesCounter, m_audio2PtsPcrDiff)) {
                         // Already added
                         m_audio2UnitPackets.clear();
                     }
@@ -462,11 +465,14 @@ void CServiceFilter::AddPmt(const PSI &psi)
         m_audio1UnitPackets.clear();
         m_audio1MuxWorkspace.clear();
         m_audio1MuxDualMonoWorkspace.clear();
+        m_isAudio1AacMono = false;
+        m_isAudio1AacDualMono = false;
     }
     if (m_audio2Pid != lastAudio2Pid) {
         m_audio2Pts = -1;
         m_audio2UnitPackets.clear();
         m_audio2MuxWorkspace.clear();
+        m_isAudio2AacMono = false;
     }
 
     if (m_videoPid != 0) {
@@ -897,7 +903,7 @@ void CServiceFilter::AddAudioPesPackets(const std::vector<uint8_t> &pes, int pid
     }
 }
 
-bool CServiceFilter::TransmuxMonoToStereo(const std::vector<uint8_t> &unitPackets, std::vector<uint8_t> &workspace,
+bool CServiceFilter::TransmuxMonoToStereo(const std::vector<uint8_t> &unitPackets, std::vector<uint8_t> &workspace, bool &isMono,
                                           int pid, uint8_t &counter, int64_t &ptsPcrDiff)
 {
     bool pcrFlag;
@@ -913,9 +919,11 @@ bool CServiceFilter::TransmuxMonoToStereo(const std::vector<uint8_t> &unitPacket
             size_t pesPayloadPos = 9 + m_buf[8];
             if (pesPayloadPos < 6 + pesPacketLength) {
                 m_buf.resize(6 + pesPacketLength);
-                if (Aac::TransmuxMonoToStereo(m_destLeftBuf, workspace, m_buf.data() + pesPayloadPos, m_buf.size() - pesPayloadPos) &&
-                    !m_destLeftBuf.empty()) {
-
+                Aac::TransmuxMonoToStereo(m_destLeftBuf, workspace, isMono, m_buf.data() + pesPayloadPos, m_buf.size() - pesPayloadPos);
+                if (isMono) {
+                    if (m_destLeftBuf.empty()) {
+                        return true;
+                    }
                     // Stereo
                     m_buf.resize(pesPayloadPos);
                     m_buf.insert(m_buf.end(), m_destLeftBuf.begin(), m_destLeftBuf.end());
@@ -948,12 +956,16 @@ bool CServiceFilter::TransmuxDualMono(const std::vector<uint8_t> &unitPackets)
             size_t pesPayloadPos = 9 + m_buf[8];
             if (pesPayloadPos < 6 + pesPacketLength) {
                 m_buf.resize(6 + pesPacketLength);
-                if (Aac::TransmuxDualMono(m_destLeftBuf, m_destRightBuf, m_audio1MuxDualMonoWorkspace,
-                                          m_audio1MuxToStereo, m_audio2MuxToStereo,
-                                          m_buf.data() + pesPayloadPos, m_buf.size() - pesPayloadPos) &&
-                    !m_destLeftBuf.empty() &&
-                    !m_destRightBuf.empty()) {
-
+                Aac::TransmuxDualMono(m_destLeftBuf, m_destRightBuf, m_audio1MuxDualMonoWorkspace, m_isAudio1AacDualMono,
+                                      m_audio1MuxToStereo, m_audio2MuxToStereo,
+                                      m_buf.data() + pesPayloadPos, m_buf.size() - pesPayloadPos);
+                if (m_isAudio1AacDualMono) {
+                    if (m_destLeftBuf.empty() || m_destRightBuf.empty()) {
+                        if (m_destLeftBuf.empty() && m_destRightBuf.empty()) {
+                            return true;
+                        }
+                        return false;
+                    }
                     // Dual mono left
                     m_buf.resize(pesPayloadPos);
                     m_buf.insert(m_buf.end(), m_destLeftBuf.begin(), m_destLeftBuf.end());

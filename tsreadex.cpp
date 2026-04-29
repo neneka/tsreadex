@@ -27,6 +27,11 @@
 #include "traceb24.hpp"
 #include "util.hpp"
 
+struct fclose_deleter
+{
+    void operator()(FILE *fp) { fclose(fp); }
+};
+
 namespace
 {
 void SleepFor(std::chrono::milliseconds rel)
@@ -153,7 +158,7 @@ int main(int argc, char **argv)
     int timeoutSec = 0;
     int timeoutMode = 0;
     std::unordered_set<int> excludePidSet;
-    std::unique_ptr<FILE, decltype(&fclose)> traceFile(nullptr, fclose);
+    std::unique_ptr<FILE, fclose_deleter> traceFile;
     CServiceFilter servicefilter;
     CTraceB24Caption traceb24;
     CID3Converter id3conv;
